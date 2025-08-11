@@ -66,7 +66,7 @@ class _FilesPageState extends State<FilesPage>
             width: 220,
             height: 50,
             decoration: BoxDecoration(
-              color: Colors.greenAccent.withOpacity(0.5),
+              color: const Color.fromARGB(255, 0, 0, 0).withOpacity(0.5),
               borderRadius: BorderRadius.circular(30),
             ),
             child: Stack(

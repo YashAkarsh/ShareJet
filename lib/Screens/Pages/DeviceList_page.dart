@@ -1,20 +1,37 @@
 
 import 'package:flutter/material.dart';
+import 'package:sharejet/Screens/displayDevices.dart';
+import 'package:sharejet/database/db.dart';
 import 'package:sharejet/models/cardDataType.dart';
 
 
 class DeviceListPage extends StatefulWidget {
-  const DeviceListPage({super.key});
+  List<CardType> devices_list;
+  DeviceListPage({super.key,required List<CardType> this.devices_list});
 
   @override
   State<DeviceListPage> createState() => _DeviceListPageState();
 }
 
 class _DeviceListPageState extends State<DeviceListPage> {
+  final DataBase _db=DataBase.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    // fetchDevices();
+  }
+
+  Future<void> deleteDevice(int id) async {
+  await _db.deleteDevice(id);
+  // after deletion, fetch updated devices list and update state
+  final updatedDevices = await _db.getDevices();
+  setState(() {
+    widget.devices_list = updatedDevices;
+  });
+}
   @override
   Widget build(BuildContext context) {
-    List<CardType> devices = [];
-
     return Column(
       children: [
         Expanded(
@@ -22,14 +39,21 @@ class _DeviceListPageState extends State<DeviceListPage> {
             decoration: BoxDecoration(
               // color: Colors.red,
             ),
-            child: devices.isEmpty
+            child: widget.devices_list.isEmpty
                 ? const Center(
                     child: Text(
                       'No devices added!',
                       style: TextStyle(fontSize: 20, color: Colors.grey),
                     ),
                   )
-                : const Center(child: Text('Listing available devices')),
+                : ListView.builder(
+                  padding: EdgeInsets.only(bottom: 50),
+                  itemCount: widget.devices_list.length,
+                  
+                  itemBuilder: (context,index){
+                  
+                  return DisplayDevices(id: widget.devices_list[index].id, device_name: widget.devices_list[index].deviceName,ip_address:  widget.devices_list[index].ip,status: widget.devices_list[index].status==0?false:true,onDelete: deleteDevice,);
+                })
           ),
         ),
       ],
