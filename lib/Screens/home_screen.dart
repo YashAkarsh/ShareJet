@@ -4,6 +4,12 @@ import 'package:sharejet/Screens/Pages/FilesPage.dart';
 import 'package:sharejet/Screens/addDeviceScreen.dart';
 import 'package:sharejet/database/db.dart';
 import 'package:sharejet/models/cardDataType.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'dart:io';
+import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:archive/archive_io.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,43 +19,148 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final DataBase _db=DataBase.instance;
-  List<CardType> devices=[];
+  final DataBase _db = DataBase.instance;
+  List<CardType> devices = [];
   int pg_index = 0;
+
+  // Download state
+  double progress = 0.0;
+  String status = "Idle";
 
   @override
   void initState() {
     super.initState();
     pg_index = 0;
-    fetchDevices();
+    fetchDevices().then((_) {
+      if (devices.isNotEmpty) {
+        // Start download immediately after devices fetched
+        startDownload("http://${devices[0].ip}:8000/files.zip");
+      }
+    });
   }
 
-  Future<void> fetchDevices() async{
-    final fetchedData=await _db.getDevices();
+  Future<void> fetchDevices() async {
+    final fetchedData = await _db.getDevices();
     setState(() {
-      devices=fetchedData;
+      devices = fetchedData;
     });
+    await connectDevices();
+  }
+
+  Future<void> connectDevices() async {
+    for (var device in devices) {
+      try {
+        final uri = Uri.parse('http://${device.ip}:8000');
+        final response = await http.get(uri);
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          print(data);
+          _db.updateDeviceStatus(device.id, 1);
+        } else {
+          _db.updateDeviceStatus(device.id, 0);
+        }
+      } catch (e) {
+        _db.updateDeviceStatus(device.id, 0);
+      }
+    }
+  }
+
+  Future<void> refresh() async {
+    await fetchDevices();
+    await connectDevices();
+  }
+
+  // ---------- DOWNLOAD + UNZIP ----------
+  Future<String> downloadZip(String url) async {
+    Dio dio = Dio();
+    Directory dir = await getApplicationDocumentsDirectory();
+    String zipPath = "${dir.path}/shared_files.zip";
+
+    await dio.download(
+      url,
+      zipPath,
+      onReceiveProgress: (received, total) {
+        if (total != -1) {
+          setState(() {
+            progress = received / total;
+          });
+        }
+      },
+    );
+
+    return zipPath;
+  }
+
+  Future<String> unzipFile(String zipPath) async {
+    Directory dir = await getApplicationDocumentsDirectory();
+    String extractPath = "${dir.path}/SharedFiles";
+    Directory(extractPath).createSync(recursive: true);
+
+    final bytes = File(zipPath).readAsBytesSync();
+    final archive = ZipDecoder().decodeBytes(bytes);
+
+    for (final file in archive) {
+      final filename = file.name;
+      final data = file.content as List<int>;
+      File("$extractPath/$filename")
+        ..createSync(recursive: true)
+        ..writeAsBytesSync(data);
+    }
+
+    return extractPath;
+  }
+
+  void startDownload(String url) async {
+    setState(() {
+      status = "Downloading...";
+      progress = 0.0;
+    });
+
+    try {
+      String zipPath = await downloadZip(url);
+
+      setState(() {
+        status = "Unzipping...";
+      });
+
+      await unzipFile(zipPath);
+
+      setState(() {
+        status = "Done!";
+        progress = 1.0;
+      });
+
+      // Hide after 2 seconds
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) setState(() => status = "Idle");
+      });
+    } catch (e) {
+      setState(() {
+        status = "Failed!";
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> screens = [DeviceListPage(devices_list:devices), FilesPage()];
+    final List<Widget> screens = [
+      DeviceListPage(devices_list: devices, OnRefresh: fetchDevices),
+      FilesPage(),
+    ];
 
     return Scaffold(
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(bottom: 85),
         child: FloatingActionButton(
-          
           onPressed: () async {
             await showDialog(
               context: context,
-              builder: (BuildContext context)  {
+              builder: (BuildContext context) {
                 return const AddDeviceScreen();
               },
             );
-            await fetchDevices();
-
+            await refresh();
           },
           shape: const CircleBorder(),
           backgroundColor: Colors.greenAccent.withOpacity(0.7),
@@ -69,7 +180,10 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Row(
                 children: [
                   const Text('Share'),
-                  Text('Jet', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    'Jet',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ],
               ),
             ),
@@ -83,7 +197,7 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: const Icon(
                 Icons.settings,
                 size: 30,
-                color: Color.fromARGB(255, 0, 0, 0),
+                color: Colors.black,
               ),
             ),
           ),
@@ -93,11 +207,33 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Stack(
         children: [
           // Main content
-          Positioned.fill(
-            child: screens[pg_index],
-          ),
+          Positioned.fill(child: screens[pg_index]),
 
-          // Floating transparent bottom nav
+          // Progress bar overlay
+          if (status != "Idle")
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 90,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                color: Colors.black.withOpacity(0.6),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(status, style: const TextStyle(color: Colors.white)),
+                    const SizedBox(height: 5),
+                    LinearProgressIndicator(
+                      value: progress,
+                      backgroundColor: Colors.white24,
+                      color: Colors.greenAccent,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // Bottom navigation
           Positioned(
             left: 0,
             right: 0,
@@ -106,12 +242,11 @@ class _HomeScreenState extends State<HomeScreen> {
               height: 60,
               margin: const EdgeInsets.symmetric(horizontal: 80),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.3), // transparent
+                color: Colors.black.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(40),
               ),
               child: Stack(
                 children: [
-                  // Sliding white background
                   AnimatedAlign(
                     alignment: pg_index == 0
                         ? Alignment.centerLeft
@@ -120,24 +255,22 @@ class _HomeScreenState extends State<HomeScreen> {
                     curve: Curves.easeInOut,
                     child: Container(
                       width: 90,
-                      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(30),
                       ),
                     ),
                   ),
-                  // Icons row
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
                       GestureDetector(
                         behavior: HitTestBehavior.translucent,
-                        onTap: () {
-                          setState(() {
-                            pg_index = 0;
-                          });
-                        },
+                        onTap: () => setState(() => pg_index = 0),
                         child: SizedBox(
                           width: 80,
                           height: double.infinity,
@@ -150,11 +283,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       GestureDetector(
                         behavior: HitTestBehavior.translucent,
-                        onTap: () {
-                          setState(() {
-                            pg_index = 1;
-                          });
-                        },
+                        onTap: () => setState(() => pg_index = 1),
                         child: SizedBox(
                           width: 80,
                           height: double.infinity,

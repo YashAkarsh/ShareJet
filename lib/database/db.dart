@@ -39,12 +39,24 @@ class DataBase{
     return dataBase;
   }
 
-  Future<void> updateDevices(String name,String ip) async{
+  Future<void> updateDevices(String name,String ip ,int? id) async{
     final db=await database;
+    if(id==null){
     await db.insert('devices', {
       'name': name,
       'ip': ip
     });
+    }
+    else{
+      await db.update('devices', 
+      where: 'id= ?',
+      whereArgs: [id],
+      {
+        'name': name,
+        'ip': ip
+      }
+      );
+    }
   }
 
   Future<void> updateDeviceStatus(int id,int status)async{

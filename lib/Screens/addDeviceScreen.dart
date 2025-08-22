@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:sharejet/database/db.dart';
 
 class AddDeviceScreen extends StatefulWidget {
-  const AddDeviceScreen({super.key});
+  final int? id;
+  final String? name;
+  final String? ip;
+  const AddDeviceScreen({super.key, this.id, this.name,this.ip});
 
   @override
   State<AddDeviceScreen> createState() => _AddDeviceScreenState();
@@ -16,8 +19,8 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
   bool _isFocused1 = false;
   bool _isFocused2 = false;
 
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _ipController = TextEditingController();
+  late TextEditingController _nameController;
+  late TextEditingController _ipController;
 
   String hintName = 'Name';
   String hintIp = 'Ip Address';
@@ -50,15 +53,35 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
         }
       });
     });
+    widget.id!=null?
+    {
+    _nameController=TextEditingController(text: widget.name),
+    _ipController=TextEditingController(text: widget.ip)
+    }
+    :
+    {
+    _nameController=TextEditingController(),
+    _ipController=TextEditingController()
+    };
+
   }
 
-  void save(String name,String ip) async {
-    print("name: "+name);
-    print("ip: "+ip);
+  void save(String name,String ip,int? id) async {
+    if(id==null && name.isNotEmpty && ip.isNotEmpty){
+    await _db.updateDevices(name, ip,null);
+      Navigator.pop(context,true);
 
-    await _db.updateDevices(name, ip);
-    Navigator.pop(context,true);
+    }
+    else if(id!=null && name.isNotEmpty && ip.isNotEmpty){
+    await _db.updateDevices(name, ip,id);
+      Navigator.pop(context,true);
+    }
+
   }
+
+  // void update(String name, String ip) async{
+  //   await _db.
+  // }
 
   @override
   void dispose() {
@@ -69,11 +92,11 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
   }
 
   @override
-  Widget build(BuildContext context, {int? id}) {
+  Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(
         textAlign: TextAlign.center,
-        id == null ? 'Add Device' : 'Edit Device',
+        widget.id == null ? 'Add Device' : 'Edit Device',
         style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[700]),
       ),
       content: Column(
@@ -122,10 +145,10 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
             width: 150,
             height: 50,
             child: ElevatedButton(
-              onPressed: () => save(_nameController.text,_ipController.text.toString()),
+              onPressed: () => widget.id==null? save(_nameController.text,_ipController.text.toString(),null):save(_nameController.text,_ipController.text.toString(),widget.id),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.greenAccent.withAlpha(420),
-                elevation: 10,
+                backgroundColor: Colors.greenAccent,
+                elevation: 0,
                 shadowColor: Colors.black.withAlpha(250),
               ),
 
@@ -134,10 +157,10 @@ class _AddDeviceScreenState extends State<AddDeviceScreen> {
                 mainAxisSize: MainAxisSize.min,
 
                 children: [
-                  Icon(Icons.add, color: Colors.black, size: 25),
+                  Icon(Icons.add, color: const Color.fromARGB(255, 255, 255, 255), size: 25),
                   Text(
                     'Add',
-                    style: TextStyle(color: Colors.black, fontSize: 20),
+                    style: TextStyle(color: const Color.fromARGB(255, 255, 255, 255), fontSize: 20),
                   ),
                 ],
               ),
