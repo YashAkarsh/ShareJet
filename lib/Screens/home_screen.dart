@@ -10,6 +10,9 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive_io.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:open_file/open_file.dart';
+// import 'package:permission_handler/permission_handler.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -26,18 +29,33 @@ class _HomeScreenState extends State<HomeScreen> {
   // Download state
   double progress = 0.0;
   String status = "Idle";
-
+  String current_device_name='OnePlus Nord CE4 5G';
   @override
   void initState() {
     super.initState();
     pg_index = 0;
+    openLocalFile();
+    // getDeviceName();
     fetchDevices().then((_) {
       if (devices.isNotEmpty) {
+        for (var device in devices){
         // Start download immediately after devices fetched
-        startDownload("http://${devices[0].ip}:8000/files.zip");
+        startDownload("http://${device.ip}:8000/download/${current_device_name}");
+        }
       }
     });
   }
+  Future<void> openLocalFile() async {
+  Directory dir = await getApplicationDocumentsDirectory();
+  String filePath = "${dir.path}/SharedFiles";
+
+  if (File(filePath).existsSync()) {
+    print('opened');
+    OpenFile.open(filePath);
+  } else {
+    print("File not found locally. Download first.");
+  }
+}
 
   Future<void> fetchDevices() async {
     final fetchedData = await _db.getDevices();
@@ -47,14 +65,46 @@ class _HomeScreenState extends State<HomeScreen> {
     await connectDevices();
   }
 
+  // fetch mobile device name
+
+  Future<void> getDeviceName() async {
+  final deviceInfoPlugin = DeviceInfoPlugin();
+
+  if (Platform.isAndroid) {
+    final androidInfo = await deviceInfoPlugin.androidInfo;
+    current_device_name="${androidInfo.manufacturer} ${androidInfo.model}";
+    // return "${androidInfo.manufacturer} ${androidInfo.model}";
+
+  } else if (Platform.isIOS) {
+    final iosInfo = await deviceInfoPlugin.iosInfo;
+    // return iosInfo.name; // e.g. "Yash’s iPhone"
+    current_device_name=iosInfo.name;
+
+  } else if (Platform.isWindows) {
+    final windowsInfo = await deviceInfoPlugin.windowsInfo;
+    current_device_name= windowsInfo.computerName;
+  } else if (Platform.isLinux) {
+    final linuxInfo = await deviceInfoPlugin.linuxInfo;
+    current_device_name= linuxInfo.name;
+  } else if (Platform.isMacOS) {
+    final macInfo = await deviceInfoPlugin.macOsInfo;
+    current_device_name= macInfo.computerName;
+  }
+  else{
+
+  current_device_name= "Unknown Device";
+  }
+}
+
   Future<void> connectDevices() async {
     for (var device in devices) {
       try {
         final uri = Uri.parse('http://${device.ip}:8000');
         final response = await http.get(uri);
         if (response.statusCode == 200) {
-          final data = jsonDecode(response.body);
-          print(data);
+          final Map<String,dynamic> data = jsonDecode(response.body);
+          print(data['files_pending']);
+          
           _db.updateDeviceStatus(device.id, 1);
         } else {
           _db.updateDeviceStatus(device.id, 0);
@@ -69,6 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
     await fetchDevices();
     await connectDevices();
   }
+
 
   // ---------- DOWNLOAD + UNZIP ----------
   Future<String> downloadZip(String url) async {
@@ -136,7 +187,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
     } catch (e) {
       setState(() {
-        status = "Failed!";
+        status = "Idle";
       });
     }
   }
