@@ -12,7 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:archive/archive_io.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:open_file/open_file.dart';
-// import 'package:permission_handler/permission_handler.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -26,37 +26,47 @@ class _HomeScreenState extends State<HomeScreen> {
   List<CardType> devices = [];
   int pg_index = 0;
 
-  // Download state
   double progress = 0.0;
   String status = "Idle";
-  String current_device_name='OnePlus Nord CE4 5G';
+  String current_device_name = 'Yash_phone';
+
   @override
   void initState() {
     super.initState();
     pg_index = 0;
+    // requestStoragePermission();
     openLocalFile();
-    // getDeviceName();
     fetchDevices().then((_) {
       if (devices.isNotEmpty) {
-        for (var device in devices){
-        // Start download immediately after devices fetched
-        startDownload("http://${device.ip}:8000/download/${current_device_name}");
+        for (var device in devices) {
+          startDownload("http://${device.ip}:8000/download/$current_device_name");
         }
       }
     });
   }
+
+  // // 🧾 Request storage permission (important for older Androids)
+  // Future<void> requestStoragePermission() async {
+  //   if (await Permission.storage.request().isGranted) {
+  //     print("✅ Storage permission granted");
+  //   } else {
+  //     print("❌ Storage permission denied");
+  //   }
+  // }
+
+  // 📂 Try opening the downloaded/unzipped folder
   Future<void> openLocalFile() async {
-  Directory dir = await getApplicationDocumentsDirectory();
-  String filePath = "${dir.path}/SharedFiles";
+    final folderPath = '/storage/emulated/0/Download/SharedFiles';
 
-  if (File(filePath).existsSync()) {
-    print('opened');
-    OpenFile.open(filePath);
-  } else {
-    print("File not found locally. Download first.");
+    if (Directory(folderPath).existsSync()) {
+      print('✅ Opening folder: $folderPath');
+      OpenFile.open(folderPath);
+    } else {
+      print(" Folder not found locally. Download first.");
+    }
   }
-}
 
+  // 🧠 Fetch devices from local DB
   Future<void> fetchDevices() async {
     final fetchedData = await _db.getDevices();
     setState(() {
@@ -65,46 +75,39 @@ class _HomeScreenState extends State<HomeScreen> {
     await connectDevices();
   }
 
-  // fetch mobile device name
-
+  // 💻 Get current device name
   Future<void> getDeviceName() async {
-  final deviceInfoPlugin = DeviceInfoPlugin();
+    final deviceInfoPlugin = DeviceInfoPlugin();
 
-  if (Platform.isAndroid) {
-    final androidInfo = await deviceInfoPlugin.androidInfo;
-    current_device_name="${androidInfo.manufacturer} ${androidInfo.model}";
-    // return "${androidInfo.manufacturer} ${androidInfo.model}";
-
-  } else if (Platform.isIOS) {
-    final iosInfo = await deviceInfoPlugin.iosInfo;
-    // return iosInfo.name; // e.g. "Yash’s iPhone"
-    current_device_name=iosInfo.name;
-
-  } else if (Platform.isWindows) {
-    final windowsInfo = await deviceInfoPlugin.windowsInfo;
-    current_device_name= windowsInfo.computerName;
-  } else if (Platform.isLinux) {
-    final linuxInfo = await deviceInfoPlugin.linuxInfo;
-    current_device_name= linuxInfo.name;
-  } else if (Platform.isMacOS) {
-    final macInfo = await deviceInfoPlugin.macOsInfo;
-    current_device_name= macInfo.computerName;
+    if (Platform.isAndroid) {
+      final androidInfo = await deviceInfoPlugin.androidInfo;
+      current_device_name = "${androidInfo.manufacturer} ${androidInfo.model}";
+    } else if (Platform.isWindows) {
+      final windowsInfo = await deviceInfoPlugin.windowsInfo;
+      current_device_name = windowsInfo.computerName;
+    } else if (Platform.isLinux) {
+      final linuxInfo = await deviceInfoPlugin.linuxInfo;
+      current_device_name = linuxInfo.name;
+    } else if (Platform.isMacOS) {
+      final macInfo = await deviceInfoPlugin.macOsInfo;
+      current_device_name = macInfo.computerName;
+    } else if (Platform.isIOS) {
+      final iosInfo = await deviceInfoPlugin.iosInfo;
+      current_device_name = iosInfo.name;
+    } else {
+      current_device_name = "Unknown Device";
+    }
   }
-  else{
 
-  current_device_name= "Unknown Device";
-  }
-}
-
+  // 🔗 Connect devices to check status
   Future<void> connectDevices() async {
     for (var device in devices) {
       try {
         final uri = Uri.parse('http://${device.ip}:8000');
         final response = await http.get(uri);
         if (response.statusCode == 200) {
-          final Map<String,dynamic> data = jsonDecode(response.body);
-          print(data['files_pending']);
-          
+          final Map<String, dynamic> data = jsonDecode(response.body);
+          print("Files pending: ${data['files_pending']}");
           _db.updateDeviceStatus(device.id, 1);
         } else {
           _db.updateDeviceStatus(device.id, 0);
@@ -120,32 +123,32 @@ class _HomeScreenState extends State<HomeScreen> {
     await connectDevices();
   }
 
-
   // ---------- DOWNLOAD + UNZIP ----------
   Future<String> downloadZip(String url) async {
     Dio dio = Dio();
-    Directory dir = await getApplicationDocumentsDirectory();
-    String zipPath = "${dir.path}/shared_files.zip";
+
+    final dir = Directory('/storage/emulated/0/Download');
+    if (!await dir.exists()) await dir.create(recursive: true);
+
+    String zipPath = '${dir.path}/shared_files.zip';
 
     await dio.download(
       url,
       zipPath,
       onReceiveProgress: (received, total) {
         if (total != -1) {
-          setState(() {
-            progress = received / total;
-          });
+          setState(() => progress = received / total);
         }
       },
     );
 
+    print("✅ Zip downloaded at $zipPath");
     return zipPath;
   }
 
   Future<String> unzipFile(String zipPath) async {
-    Directory dir = await getApplicationDocumentsDirectory();
-    String extractPath = "${dir.path}/SharedFiles";
-    Directory(extractPath).createSync(recursive: true);
+    final extractDir = Directory('/storage/emulated/0/Download/SharedFiles');
+    if (!await extractDir.exists()) await extractDir.create(recursive: true);
 
     final bytes = File(zipPath).readAsBytesSync();
     final archive = ZipDecoder().decodeBytes(bytes);
@@ -153,12 +156,13 @@ class _HomeScreenState extends State<HomeScreen> {
     for (final file in archive) {
       final filename = file.name;
       final data = file.content as List<int>;
-      File("$extractPath/$filename")
+      File('${extractDir.path}/$filename')
         ..createSync(recursive: true)
         ..writeAsBytesSync(data);
     }
 
-    return extractPath;
+    print("✅ Files extracted to ${extractDir.path}");
+    return extractDir.path;
   }
 
   void startDownload(String url) async {
@@ -181,11 +185,11 @@ class _HomeScreenState extends State<HomeScreen> {
         progress = 1.0;
       });
 
-      // Hide after 2 seconds
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) setState(() => status = "Idle");
       });
     } catch (e) {
+      print("❌ Download error: $e");
       setState(() {
         status = "Idle";
       });
@@ -220,21 +224,17 @@ class _HomeScreenState extends State<HomeScreen> {
           child: const Icon(Icons.add, size: 32),
         ),
       ),
-
       appBar: AppBar(
         title: Row(
           spacing: 10,
           children: [
-            Icon(Icons.adobe, size: 35, color: Colors.greenAccent),
+            const Icon(Icons.adobe, size: 35, color: Colors.greenAccent),
             Padding(
               padding: const EdgeInsets.only(top: 12, bottom: 10),
               child: Row(
-                children: [
-                  const Text('Share'),
-                  Text(
-                    'Jet',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
+                children: const [
+                  Text('Share'),
+                  Text('Jet', style: TextStyle(fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
@@ -245,22 +245,16 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.only(right: 25),
             child: IconButton(
               onPressed: () {},
-              icon: const Icon(
-                Icons.settings,
-                size: 30,
-                color: Colors.black,
-              ),
+              icon: const Icon(Icons.settings, size: 30, color: Colors.black),
             ),
           ),
         ],
       ),
-
       body: Stack(
         children: [
-          // Main content
           Positioned.fill(child: screens[pg_index]),
 
-          // Progress bar overlay
+          // Download status overlay
           if (status != "Idle")
             Positioned(
               left: 0,
