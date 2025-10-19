@@ -1,0 +1,1 @@
+print(len(dic['files']))

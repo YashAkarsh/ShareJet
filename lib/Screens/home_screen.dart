@@ -28,7 +28,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   double progress = 0.0;
   String status = "Idle";
-  String current_device_name = 'Yash_phone';
+  String current_device_name = 'YashPhone';
 
   @override
   void initState() {
@@ -39,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
     fetchDevices().then((_) {
       if (devices.isNotEmpty) {
         for (var device in devices) {
+          print("here");
           startDownload("http://${device.ip}:8000/download/$current_device_name");
         }
       }
@@ -119,9 +120,25 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> refresh() async {
-    await fetchDevices();
-    await connectDevices();
-  }
+  // print("🔄 Refreshing devices...");
+  
+  await fetchDevices();
+
+  // print("📱 Devices found: ${devices.length}");
+  // for (var d in devices) {
+  //   print("→ Device: ${d.deviceName} at ${d.ip}");
+  // }
+
+
+  if (devices.isNotEmpty) {
+    for (var device in devices) {
+      final url = "http://${device.ip}:8000/download/$current_device_name";
+      // print("⬇️ Download starting for $url");
+      startDownload(url);
+    }
+  } 
+  await connectDevices();
+}
 
   // ---------- DOWNLOAD + UNZIP ----------
   Future<String> downloadZip(String url) async {
